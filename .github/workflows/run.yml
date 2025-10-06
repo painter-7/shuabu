@@ -26,7 +26,7 @@ jobs:
         env:
             CONFIG: ${{ secrets.CONFIG }}
         run: |
-          pip3 install requests pytz pycryptodome
+          pip3 install requests pytz pycryptodome schedule
           python3 main.py
 
       - name: 提交执行记录
