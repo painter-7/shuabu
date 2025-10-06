@@ -2,7 +2,7 @@ name: 刷步数
 
 on:
   schedule:
-    - cron: '50 1,4,8,10,12,14 * * *'
+    - cron: '27 10 * * *'
   workflow_dispatch:
 
 jobs:
@@ -26,5 +26,22 @@ jobs:
         env:
             CONFIG: ${{ secrets.CONFIG }}
         run: |
-          pip3 install requests pytz
+          pip3 install requests pytz pycryptodome
           python3 main.py
+
+      - name: 提交执行记录
+        if: success()
+        run: |
+          # 检查文件是否有变化
+          if git diff --exit-code last_run.txt; then
+            echo "文件未变化，跳过提交"
+          else
+            echo "检测到文件变更，执行提交"
+            git config --global user.name "GitHub Actions"
+            git config --global user.email "github-actions@github.com"
+            git add last_run.txt
+            git commit -m "[Bot] Update last run date"
+            git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:master
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
