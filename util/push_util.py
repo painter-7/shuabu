@@ -43,13 +43,7 @@ class PushConfig:
 
 
 def push_plus(token, title, content):
-    """
-    推送消息类型为html 需要在外部组装html代码的content
-    :param token: PUSHPLUS 的token
-    :param title: 推送标题
-    :param content: 推送内容
-    :return: none
-    """
+    """推送到PushPlus"""
     requestUrl = f"http://www.pushplus.plus/send"
     data = {
         "token": token,
@@ -72,13 +66,7 @@ def push_plus(token, title, content):
 
 
 def push_wechat_webhook(key, title, content):
-    """
-    推送企业微信通知，WebHook方式
-    :param key: WebHook机器人的key
-    :param title: 推送标题
-    :param content: 推送内容
-    :return:
-    """
+    """推送到企业微信"""
     requestUrl = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={key}"
     payload = {
         "msgtype": "markdown_v2",
@@ -107,13 +95,7 @@ def buildWeChatContent(title, content) -> str:
 
 
 def push_telegram_bot(bot_token, chat_id, content):
-    """
-    推送消息类型为html 需要在外部组装html content
-    :param bot_token: telegram bot token
-    :param chat_id: telegram bot chat_id
-    :param content: 推送内容
-    :return: none
-    """
+    """推送到Telegram"""
     requestUrl = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
         "chat_id": int(chat_id),
@@ -188,17 +170,18 @@ def desensitize_account(account):
         return account[:3] + "***" if len(account) > 3 else account + "***"
 
 
-# ========== 公共函数2：生成统一格式的推送内容 ==========
+# ========== 公共函数2：生成统一格式的推送内容【核心换行优化】 ==========
 def generate_unified_content(exec_results, summary):
-    """生成3种推送方式共用的、完全匹配要求的内容格式"""
+    """生成3种推送方式共用的、严格匹配换行要求的内容格式"""
     success_count = sum(1 for res in exec_results if res.get("success") is True)
     fail_count = len(exec_results) - success_count
     exec_date, finish_time = format_date_hm()
     step_range = re.search(r'(\d+-\d+)', summary).group(1) if re.search(r'(\d+-\d+)', summary) else "未知"
     
-    # 严格按要求拼接格式、换行、分隔符，和示例一字不差
+    # ✅ 严格按你的要求排版换行，逐行对应、一字不差
     content = f"""成功{success_count}个 失败{fail_count}个
-{exec_date} 刷步报告 {finish_time} ====================
+{exec_date} 刷步报告 {finish_time}
+====================
 ■ 执行日期：{exec_date}
 ■ 完成时间：{finish_time}
 ■ 步数范围：{step_range}
@@ -207,13 +190,14 @@ def generate_unified_content(exec_results, summary):
 详细结果：
 ----------
 """
+    # ✅ 核心优化：账号单独一行、返回内容单独一行
     for idx, exec_result in enumerate(exec_results, start=1):
         safe_user = desensitize_account(exec_result["user"])
         res_msg = exec_result["msg"]
         if exec_result.get("success") is True:
-            content += f"{idx}. ✅ 成功 | 账号：{safe_user} 返回：{res_msg}\n----------------\n"
+            content += f"{idx}. ✅ 成功 | 账号：{safe_user}\n返回：{res_msg}\n----------------\n"
         else:
-            content += f"{idx}. ❌ 失败 | 账号：{safe_user} 返回：{res_msg}\n----------------\n"
+            content += f"{idx}. ❌ 失败 | 账号：{safe_user}\n返回：{res_msg}\n----------------\n"
     return f"成功{success_count}个 失败{fail_count}个", content
 
 
@@ -228,7 +212,7 @@ def push_to_push_plus(exec_results, summary, config: PushConfig):
 
 
 def push_to_wechat_webhook(exec_results, summary, config: PushConfig):
-    """推送到企业微信【格式统一修改】"""
+    """推送到企业微信"""
     if config.push_wechat_webhook_key and config.push_wechat_webhook_key != '' and config.push_wechat_webhook_key != 'NO':
         push_title, push_content = generate_unified_content(exec_results, summary)
         push_wechat_webhook(config.push_wechat_webhook_key, push_title, push_content)
@@ -237,7 +221,7 @@ def push_to_wechat_webhook(exec_results, summary, config: PushConfig):
 
 
 def push_to_telegram_bot(exec_results, summary, config: PushConfig):
-    """推送到Telegram【格式统一修改】"""
+    """推送到Telegram"""
     if (config.telegram_bot_token and config.telegram_bot_token != '' and config.telegram_bot_token != 'NO' and
             config.telegram_chat_id and config.telegram_chat_id != ''):
         push_title, push_content = generate_unified_content(exec_results, summary)
