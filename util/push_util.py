@@ -19,7 +19,9 @@ def format_now():
 def format_date_hm():
     """格式化日期和时分秒（专属报告展示）"""
     bj_time = get_beijing_time()
-    return bj_time.strftime("%Y-%m-%d"), bj_time.strftime("%H:%M:%S")
+    date = bj_time.strftime("%Y-%m-%d")
+    hm = bj_time.strftime("%H:%M:%S")
+    return date, hm
 
 
 class PushConfig:
@@ -67,28 +69,23 @@ def push_plus(token, title, content):
         print(f"pushplus推送网络异常: {e}")
     except Exception as e:
         print(f"pushplus推送未知异常: {e}")
-    return response.status_code
 
 
 def push_wechat_webhook(key, title, content):
     """
-    推送企业微信通知，WebHook方式，需要注册企业微信并配置机器人到对应的推送群。然后提取对应的key
-
+    推送企业微信通知，WebHook方式
     :param key: WebHook机器人的key
     :param title: 推送标题
-    :param content: 推送内容，虽然支持markdown，但是在使用微信插件时，消息不能被完整展示，直接使用纯文本效果会更好
+    :param content: 推送内容
     :return:
     """
-
     requestUrl = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={key}"
-
     payload = {
         "msgtype": "markdown_v2",
         "markdown_v2": {
             "content": buildWeChatContent(title, content)
         }
     }
-
     try:
         response = requests.post(requestUrl, json=payload)
         if response.status_code == 200:
@@ -103,7 +100,6 @@ def push_wechat_webhook(key, title, content):
         print(f"企业微信推送异常: {e}")
     except Exception as e:
         print(f"企业微信推送发生未知异常: {e}")
-    return response.status_code
 
 
 def buildWeChatContent(title, content) -> str:
@@ -119,7 +115,6 @@ def push_telegram_bot(bot_token, chat_id, content):
     :return: none
     """
     requestUrl = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-
     payload = {
         "chat_id": int(chat_id),
         "text": content,
@@ -141,7 +136,6 @@ def push_telegram_bot(bot_token, chat_id, content):
         print(f"telegram bot推送异常: {e}")
     except Exception as e:
         print(f"telegram bot推送发生未知异常: {e}")
-    return response.status_code
 
 
 def push_results(exec_results, summary, config: PushConfig):
@@ -156,31 +150,22 @@ def push_results(exec_results, summary, config: PushConfig):
 def not_in_push_time_range(config: PushConfig) -> bool:
     """检查是否在推送时间范围内"""
     if not config.push_plus_hour:
-        return False  # 如果没有设置推送时间，则总是推送
-
+        return False
     time_bj = get_beijing_time()
-
-    # 首先根据时间判断，如果匹配 直接返回
     if config.push_plus_hour.isdigit():
         if time_bj.hour == int(config.push_plus_hour):
             print(f"当前设置推送整点为：{config.push_plus_hour}, 当前整点为：{time_bj.hour}，执行推送")
             return False
-
-    # 如果时间不匹配，检查cron_change_time文件中的记录
-    # 读取cron_change_time文件中的最后一行数据：“next exec time: UTC(7:35) 北京时间(15:35)” 中的整点数
-    # 然后用来对比是否当前时间，避免因为Actions执行延迟导致推送失效
     try:
         with open('cron_change_time', 'r') as f:
             lines = f.readlines()
             if lines:
                 last_line = lines[-1].strip()
-                # 提取北京时间的小时数
                 match = re.search(r'北京时间\(0?(\d+):\d+\)', last_line)
                 if match:
                     cron_hour = int(match.group(1))
                     if int(config.push_plus_hour) == cron_hour:
-                        print(
-                            f"当前设置推送整点为：{config.push_plus_hour}, 根据执行记录，本次执行整点为：{cron_hour}，执行推送")
+                        print(f"当前设置推送整点为：{config.push_plus_hour}, 本次执行整点为：{cron_hour}，执行推送")
                         return False
     except Exception as e:
         print(f"读取cron_change_time文件出错: {e}")
@@ -188,56 +173,74 @@ def not_in_push_time_range(config: PushConfig) -> bool:
     return True
 
 
-# ========== 账号脱敏函数 ==========
+# ========== 公共函数1：账号脱敏 ==========
 def desensitize_account(account):
     """账号脱敏：适配手机号、邮箱"""
     if not account:
         return "未知账号"
-    # 手机号脱敏（11位数字）
     if account.isdigit() and len(account) == 11:
         return f"{account[:3]}***{account[7:]}"
-    # 邮箱脱敏
     elif "@" in account:
         user, domain = account.split("@", 1)
-        user_safe = user[:3] + "***" if len(user) >=3 else user[0] + "***"
+        user_safe = user[:3] + "***" if len(user) >= 3 else user[0] + "***"
         return f"{user_safe}@{domain}"
-    # 其他账号脱敏
     else:
         return account[:3] + "***" if len(account) > 3 else account + "***"
 
 
+# ========== 公共函数2：生成统一格式的推送内容 ==========
+def generate_unified_content(exec_results, summary):
+    """生成3种推送方式共用的、完全匹配要求的内容格式"""
+    success_count = sum(1 for res in exec_results if res.get("success") is True)
+    fail_count = len(exec_results) - success_count
+    exec_date, finish_time = format_date_hm()
+    step_range = re.search(r'(\d+-\d+)', summary).group(1) if re.search(r'(\d+-\d+)', summary) else "未知"
+    
+    # 严格按要求拼接格式、换行、分隔符，和示例一字不差
+    content = f"""成功{success_count}个 失败{fail_count}个
+{exec_date} 刷步报告 {finish_time} ====================
+■ 执行日期：{exec_date}
+■ 完成时间：{finish_time}
+■ 步数范围：{step_range}
+■ 同步结果：成功{success_count}个 | 失败{fail_count}个
+■ 成功率：{(success_count/len(exec_results)*100):.1f}%
+详细结果：
+----------
+"""
+    for idx, exec_result in enumerate(exec_results, start=1):
+        safe_user = desensitize_account(exec_result["user"])
+        res_msg = exec_result["msg"]
+        if exec_result.get("success") is True:
+            content += f"{idx}. ✅ 成功 | 账号：{safe_user} 返回：{res_msg}\n----------------\n"
+        else:
+            content += f"{idx}. ❌ 失败 | 账号：{safe_user} 返回：{res_msg}\n----------------\n"
+    return f"成功{success_count}个 失败{fail_count}个", content
+
+
+# ========== 三种推送方式：统一调用公共生成函数 ==========
 def push_to_push_plus(exec_results, summary, config: PushConfig):
-    """推送到PushPlus【最终版：完全匹配用户要求的格式】"""
+    """推送到PushPlus"""
     if config.push_plus_token and config.push_plus_token != '' and config.push_plus_token != 'NO':
-        # 统计成功/失败数量
-        success_count = sum(1 for res in exec_results if res.get("success") is True)
-        fail_count = len(exec_results) - success_count
-        
-        # 获取北京时间
-        exec_date, finish_time = format_date_hm()
-        
-        # 提取步数范围（从summary中匹配）
-        step_range_match = re.search(r'(\d+-\d+)', summary)
-        step_range = step_range_match.group(1) if step_range_match else "未知"
-        
-        # 组装完整的HTML内容，严格保留空格、换行、分隔线
-        html_content = f"""成功{success_count}个 失败{fail_count}个
-{exec_date} 刷步报告 {finish_time} ==================== 
-■ 执行日期：{exec_date} 
-■ 完成时间：{finish_time} 
-■ 步数范围：{step_range} 
-■ 同步结果：成功{success_count}个 | 失败{fail_count}个 
-■ 成功率：{(success_count/len(exec_results)*100):.1f}%  
-详细结果： 
----------- """
-        
-        # 拼接每条结果，严格保留空格和格式
-        for idx, exec_result in enumerate(exec_results, start=1):
-            safe_user = desensitize_account(exec_result["user"])
-            res_msg = exec_result["msg"]
-            html_content += f"\n{idx}. ✅ 成功 | 账号：{safe_user} 返回：{res_msg} \n---------------- "
-        
-        # 推送标题改为【成功X个 失败X个】
-        push_plus(config.push_plus_token, f"成功{success_count}个 失败{fail_count}个", html_content)
+        push_title, push_content = generate_unified_content(exec_results, summary)
+        push_plus(config.push_plus_token, push_title, push_content)
     else:
         print("未配置 PUSH_PLUS_TOKEN 跳过PUSHPLUS推送")
+
+
+def push_to_wechat_webhook(exec_results, summary, config: PushConfig):
+    """推送到企业微信【格式统一修改】"""
+    if config.push_wechat_webhook_key and config.push_wechat_webhook_key != '' and config.push_wechat_webhook_key != 'NO':
+        push_title, push_content = generate_unified_content(exec_results, summary)
+        push_wechat_webhook(config.push_wechat_webhook_key, push_title, push_content)
+    else:
+        print("未配置 WECHAT_WEBHOOK_KEY 跳过微信推送")
+
+
+def push_to_telegram_bot(exec_results, summary, config: PushConfig):
+    """推送到Telegram【格式统一修改】"""
+    if (config.telegram_bot_token and config.telegram_bot_token != '' and config.telegram_bot_token != 'NO' and
+            config.telegram_chat_id and config.telegram_chat_id != ''):
+        push_title, push_content = generate_unified_content(exec_results, summary)
+        push_telegram_bot(config.telegram_bot_token, config.telegram_chat_id, push_content)
+    else:
+        print("未配置 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID 跳过telegram推送")
