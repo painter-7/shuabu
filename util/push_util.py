@@ -19,9 +19,7 @@ def format_now():
 def format_date_hm():
     """格式化日期和时分秒（专属报告展示）"""
     bj_time = get_beijing_time()
-    date = bj_time.strftime("%Y-%m-%d")
-    hm = bj_time.strftime("%H:%M:%S")
-    return date, hm
+    return bj_time.strftime("%Y-%m-%d"), bj_time.strftime("%H:%M:%S")
 
 
 class PushConfig:
@@ -69,6 +67,7 @@ def push_plus(token, title, content):
         print(f"pushplus推送网络异常: {e}")
     except Exception as e:
         print(f"pushplus推送未知异常: {e}")
+    return response.status_code
 
 
 def push_wechat_webhook(key, title, content):
@@ -104,6 +103,7 @@ def push_wechat_webhook(key, title, content):
         print(f"企业微信推送异常: {e}")
     except Exception as e:
         print(f"企业微信推送发生未知异常: {e}")
+    return response.status_code
 
 
 def buildWeChatContent(title, content) -> str:
@@ -141,6 +141,7 @@ def push_telegram_bot(bot_token, chat_id, content):
         print(f"telegram bot推送异常: {e}")
     except Exception as e:
         print(f"telegram bot推送发生未知异常: {e}")
+    return response.status_code
 
 
 def push_results(exec_results, summary, config: PushConfig):
@@ -187,7 +188,7 @@ def not_in_push_time_range(config: PushConfig) -> bool:
     return True
 
 
-# ========== 新增：账号脱敏函数 ==========
+# ========== 账号脱敏函数 ==========
 def desensitize_account(account):
     """账号脱敏：适配手机号、邮箱"""
     if not account:
@@ -206,78 +207,37 @@ def desensitize_account(account):
 
 
 def push_to_push_plus(exec_results, summary, config: PushConfig):
-    """推送到PushPlus（核心修改：指定格式+脱敏）"""
+    """推送到PushPlus【最终版：完全匹配用户要求的格式】"""
     if config.push_plus_token and config.push_plus_token != '' and config.push_plus_token != 'NO':
         # 统计成功/失败数量
         success_count = sum(1 for res in exec_results if res.get("success") is True)
         fail_count = len(exec_results) - success_count
-        # 获取北京时间（日期+时分）
+        
+        # 获取北京时间
         exec_date, finish_time = format_date_hm()
+        
         # 提取步数范围（从summary中匹配）
-        step_range = re.search(r'(\d+-\d+)', summary).group(1) if re.search(r'(\d+-\d+)', summary) else "未知"
+        step_range_match = re.search(r'(\d+-\d+)', summary)
+        step_range = step_range_match.group(1) if step_range_match else "未知"
         
-        # 组装你指定格式的HTML内容
-        html_content = f"""成功{success_count}个 失败{fail_count}个<br>
-{exec_date} 刷步报告 {finish_time}<br>
-====================<br>
-■ 执行日期：{exec_date}<br>
-■ 完成时间：{finish_time}<br>
-■ 步数范围：{step_range}<br>
-■ 同步结果：成功{success_count}个 | 失败{fail_count}个<br>
-■ 成功率：{(success_count/len(exec_results)*100):.1f}%<br>
-详细结果：<br>
-----------<br>"""
+        # 组装完整的HTML内容，严格保留空格、换行、分隔线
+        html_content = f"""成功{success_count}个 失败{fail_count}个
+{exec_date} 刷步报告 {finish_time} ==================== 
+■ 执行日期：{exec_date} 
+■ 完成时间：{finish_time} 
+■ 步数范围：{step_range} 
+■ 同步结果：成功{success_count}个 | 失败{fail_count}个 
+■ 成功率：{(success_count/len(exec_results)*100):.1f}%  
+详细结果： 
+---------- """
         
-        # 判断账号数量是否超限
-        if len(exec_results) >= config.push_plus_max:
-            html_content += '<div>账号数量过多，详细情况请前往github actions中查看</div>'
-        else:
-            # 拼接每条结果（脱敏+指定格式）
-            for idx, exec_result in enumerate(exec_results, start=1):
-                safe_user = desensitize_account(exec_result["user"])
-                res_msg = exec_result["msg"]
-                if exec_result.get("success") is True:
-                    html_content += f"{idx}. ✅ 成功 | 账号：{safe_user} 返回：{res_msg}<br>----------------<br>"
-                else:
-                    html_content += f"{idx}. ❌ 失败 | 账号：{safe_user} 返回：{res_msg}<br>----------------<br>"
-        # 调用推送
-        push_plus(config.push_plus_token, f"{exec_date} 刷步数通知", html_content)
+        # 拼接每条结果，严格保留空格和格式
+        for idx, exec_result in enumerate(exec_results, start=1):
+            safe_user = desensitize_account(exec_result["user"])
+            res_msg = exec_result["msg"]
+            html_content += f"\n{idx}. ✅ 成功 | 账号：{safe_user} 返回：{res_msg} \n---------------- "
+        
+        # 推送标题改为【成功X个 失败X个】
+        push_plus(config.push_plus_token, f"成功{success_count}个 失败{fail_count}个", html_content)
     else:
         print("未配置 PUSH_PLUS_TOKEN 跳过PUSHPLUS推送")
-
-
-def push_to_wechat_webhook(exec_results, summary, config: PushConfig):
-    """推送到企业微信（原逻辑未动）"""
-    if config.push_wechat_webhook_key and config.push_wechat_webhook_key != '' and config.push_wechat_webhook_key != 'NO':
-        content = f'## {summary}'
-        if len(exec_results) >= config.push_plus_max:
-            content += '\n- 账号数量过多，详细情况请前往github actions中查看'
-        else:
-            for exec_result in exec_results:
-                success = exec_result['success']
-                if success is not None and success is True:
-                    content += f'\n- 账号：{exec_result["user"]}刷步数成功，接口返回：{exec_result["msg"]}'
-                else:
-                    content += f'\n- 账号：{exec_result["user"]}刷步数失败，失败原因：{exec_result["msg"]}'
-        push_wechat_webhook(config.push_wechat_webhook_key, f"{format_now()} 刷步数通知", content)
-    else:
-        print("未配置 WECHAT_WEBHOOK_KEY 跳过微信推送")
-
-
-def push_to_telegram_bot(exec_results, summary, config: PushConfig):
-    """推送到Telegram（原逻辑未动）"""
-    if (config.telegram_bot_token and config.telegram_bot_token != '' and config.telegram_bot_token != 'NO' and
-            config.telegram_chat_id and config.telegram_chat_id != ''):
-        html = f'<b>{summary}</b>'
-        if len(exec_results) >= config.push_plus_max:
-            html += '<blockquote>账号数量过多，详细情况请前往github actions中查看</blockquote>'
-        else:
-            for exec_result in exec_results:
-                success = exec_result['success']
-                if success is not None and success is True:
-                    html += f'<pre><blockquote>账号：{exec_result["user"]}</blockquote>刷步数成功，接口返回：<b>{exec_result["msg"]}</b></pre>'
-                else:
-                    html += f'<pre><blockquote>账号：{exec_result["user"]}</blockquote>刷步数失败，失败原因：<b>{exec_result["msg"]}</b></pre>'
-        push_telegram_bot(config.telegram_bot_token, config.telegram_chat_id, html)
-    else:
-        print("未配置 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID 跳过telegram推送")
