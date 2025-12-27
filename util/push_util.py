@@ -170,15 +170,13 @@ def desensitize_account(account):
         return account[:3] + "***" if len(account) > 3 else account + "***"
 
 
-# ========== 公共函数2：生成统一格式的推送内容【核心换行优化】 ==========
+# ========== 公共函数2：生成统一格式的推送内容 ==========
 def generate_unified_content(exec_results, summary):
-    """生成3种推送方式共用的、严格匹配换行要求的内容格式"""
+    """生成3种推送方式共用模板"""
     success_count = sum(1 for res in exec_results if res.get("success") is True)
     fail_count = len(exec_results) - success_count
     exec_date, finish_time = format_date_hm()
     step_range = re.search(r'(\d+-\d+)', summary).group(1) if re.search(r'(\d+-\d+)', summary) else "未知"
-    
-    # ✅ 严格按你的要求排版换行，逐行对应、一字不差
     content = f"""成功{success_count}个 失败{fail_count}个
 {exec_date} 刷步报告 {finish_time}
 ====================
@@ -190,7 +188,6 @@ def generate_unified_content(exec_results, summary):
 详细结果：
 ----------
 """
-    # ✅ 核心优化：账号单独一行、返回内容单独一行
     for idx, exec_result in enumerate(exec_results, start=1):
         safe_user = desensitize_account(exec_result["user"])
         res_msg = exec_result["msg"]
