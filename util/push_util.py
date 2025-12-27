@@ -17,7 +17,7 @@ def format_now():
 
 
 def format_date_hm():
-    """格式化日期和时分秒（专属报告展示）"""
+    """格式化日期和时分秒"""
     bj_time = get_beijing_time()
     date = bj_time.strftime("%Y-%m-%d")
     hm = bj_time.strftime("%H:%M:%S")
