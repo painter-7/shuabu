@@ -27,11 +27,18 @@ def get_min_max_by_time(hour=None, minute=None):
         hour = time_bj.hour
     if minute is None:
         minute = time_bj.minute
+    
+    # 读取并解析 CONFIG 中的时间区间配置
+    hour_step_ranges = json.loads(config.get("HOUR_STEP_RANGES", "[]"))
+    for start_h, end_h, min_s, max_s in hour_step_ranges:
+        if start_h <= hour < end_h:
+            return int(min_s), int(max_s)
+    
+    # 无匹配区间时，沿用原线性逻辑
     time_rate = min((hour * 60 + minute) / (22 * 60), 1)
-    min_step = get_int_value_default(config, 'MIN_STEP', 18000)
-    max_step = get_int_value_default(config, 'MAX_STEP', 25000)
+    min_step = int(config.get("MIN_STEP", 18000))
+    max_step = int(config.get("MAX_STEP", 25000))
     return int(time_rate * min_step), int(time_rate * max_step)
-
 
 # 虚拟ip地址
 def fake_ip():
